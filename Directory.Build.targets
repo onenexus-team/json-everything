@@ -1,0 +1,22 @@
+<Project>
+  <!-- OneNexus build of json-everything (onenexus-team/json-everything).
+       Upstream files stay untouched; this file and .onenexus/ are the whole
+       difference. See .onenexus/README.md. -->
+  <PropertyGroup>
+    <!-- JsonLogic sets no PackageId; NuGet defaults it to the assembly name. -->
+    <PackageId Condition="'$(PackageId)' == ''">$(AssemblyName)</PackageId>
+    <!-- Project references read the referenced project's PackageId, so the
+         dependencies inside each package are renamed too. -->
+    <PackageId>OneNexus.$(PackageId)</PackageId>
+    <!-- Self-compiled binaries are MIT; the OSMF EULA covers only the maintainer's releases. -->
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <!-- The nuspec names the repository that holds this commit. -->
+    <RepositoryUrl>https://github.com/onenexus-team/json-everything</RepositoryUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="\" />
+    <!-- Upstream packs its EULA into every package; it does not apply to these builds. -->
+    <None Update="$(MSBuildThisFileDirectory)OSMFEULA.txt" Pack="false" />
+  </ItemGroup>
+</Project>

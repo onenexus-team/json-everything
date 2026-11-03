@@ -1,0 +1,61 @@
+# Builds the OneNexus.* packages from a release tag and publishes them to the
+# onenexus-team GitHub Packages NuGet feed. The only way packages reach the
+# feed; never push them by hand. Steps: .onenexus/README.md.
+name: OneNexus release
+
+on:
+  push:
+    tags:
+      - 'onenexus-*'
+
+permissions: {}
+
+concurrency:
+  group: onenexus-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # Same SDK as Beacon's CI image (platforms/beacon/.config/Dockerfile.ci).
+      SDK_IMAGE: mcr.microsoft.com/dotnet/sdk:10.0.403@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
+      FEED: https://nuget.pkg.github.com/onenexus-team/index.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pack
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src --entrypoint bash "$SDK_IMAGE" \
+            -c 'git config --global --add safe.directory /src && .onenexus/pack.sh'
+      - name: Verify packages
+        run: python3 -I .onenexus/verify.py .onenexus/out "$GITHUB_SHA"
+      - name: Record package hashes
+        # The values consumers' packages.lock.json files must show as contentHash.
+        run: |
+          {
+            echo '| Package | contentHash (SHA-512) |'
+            echo '| --- | --- |'
+            for f in .onenexus/out/*.nupkg; do
+              echo "| $(basename "$f") | \`$(openssl dgst -sha512 -binary "$f" | base64 -w0)\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: onenexus-packages-${{ github.ref_name }}
+          path: .onenexus/out/
+          retention-days: 90
+      - name: Publish to GitHub Packages
+        env:
+          NUGET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Versions already on the feed are kept (GitHub Packages refuses to
+        # overwrite them); packages unchanged since the last tag are skipped.
+        # GitHub Packages takes no symbol packages; the .snupkg files stay in the artifact.
+        run: |
+          docker run --rm -e NUGET_TOKEN -e FEED -v "$GITHUB_WORKSPACE:/src" -w /src --entrypoint bash "$SDK_IMAGE" \
+            -c 'dotnet nuget push ".onenexus/out/*.nupkg" --source "$FEED" --api-key "$NUGET_TOKEN" --skip-duplicate --no-symbols'
